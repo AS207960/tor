@@ -295,6 +295,7 @@ crypto_digest_add_bytes(crypto_digest_t *digest, const char *data,
    */
   switch (digest->algorithm) {
     case DIGEST_SHA1:
+      //printf("crypto_digest_add_bytes %p %u %u\n", digest, len, (unsigned char)data[0]);
       SHA1_Update(&digest->d.sha1, (void*)data, len);
       break;
     case DIGEST_SHA256:

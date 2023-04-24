@@ -232,6 +232,7 @@ onion_skin_ntor_server_handshake(const uint8_t *onion_skin,
           T->t_mac);
 
   /* Generate the key material */
+  printf("secret_input[0]->%u\n", s.secret_input[0]);
   crypto_expand_key_material_rfc5869_sha256(
                            s.secret_input, sizeof(s.secret_input),
                            (const uint8_t*)T->t_key, strlen(T->t_key),

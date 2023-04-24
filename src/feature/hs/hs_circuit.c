@@ -91,6 +91,11 @@ create_rend_cpath(const uint8_t *ntor_key_seed, size_t seed_len,
     goto err;
   }
 
+  printf("keys[0]: %u\n", keys[0]);
+  printf("keys[19]: %u\n", keys[19]);
+  printf("keys[20]: %u\n", keys[20]);
+  printf("keys[39]: %u\n", keys[39]);
+
   /* Setup the cpath */
   cpath = tor_malloc_zero(sizeof(crypt_path_t));
   cpath->magic = CRYPT_PATH_MAGIC;
@@ -371,7 +376,7 @@ launch_rendezvous_point_circuit,(const hs_service_t *service,
   /* Update metrics with this new rendezvous circuit launched. */
   hs_metrics_new_rdv(&service->keys.identity_pk);
 
-  log_info(LD_REND, "Rendezvous circuit launched to %s with cookie %s "
+  log_notice(LD_REND, "Rendezvous circuit launched to %s with cookie %s "
                     "for %s service %s",
            safe_str_client(extend_info_describe(info)),
            safe_str_client(hex_str((const char *) data->rendezvous_cookie,

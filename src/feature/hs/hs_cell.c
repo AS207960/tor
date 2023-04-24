@@ -160,7 +160,7 @@ parse_introduce2_encrypted(const uint8_t *decrypted_data,
 
   if (trn_cell_introduce_encrypted_parse(&enc_cell, decrypted_data,
                                          decrypted_len) < 0) {
-    log_info(LD_REND, "Unable to parse the decrypted ENCRYPTED section of "
+    log_notice(LD_REND, "Unable to parse the decrypted ENCRYPTED section of "
                       "the INTRODUCE2 cell on circuit %u for service %s",
              TO_CIRCUIT(circ)->n_circ_id,
              safe_str_client(service->onion_address));
@@ -169,7 +169,7 @@ parse_introduce2_encrypted(const uint8_t *decrypted_data,
 
   if (trn_cell_introduce_encrypted_get_onion_key_type(enc_cell) !=
       TRUNNEL_HS_INTRO_ONION_KEY_TYPE_NTOR) {
-    log_info(LD_REND, "INTRODUCE2 onion key type is invalid. Got %u but "
+    log_notice(LD_REND, "INTRODUCE2 onion key type is invalid. Got %u but "
                       "expected %u on circuit %u for service %s",
              trn_cell_introduce_encrypted_get_onion_key_type(enc_cell),
              TRUNNEL_HS_INTRO_ONION_KEY_TYPE_NTOR,
@@ -180,7 +180,7 @@ parse_introduce2_encrypted(const uint8_t *decrypted_data,
 
   if (trn_cell_introduce_encrypted_getlen_onion_key(enc_cell) !=
       CURVE25519_PUBKEY_LEN) {
-    log_info(LD_REND, "INTRODUCE2 onion key length is invalid. Got %u but "
+    log_notice(LD_REND, "INTRODUCE2 onion key length is invalid. Got %u but "
                       "expected %d on circuit %u for service %s",
              (unsigned)trn_cell_introduce_encrypted_getlen_onion_key(enc_cell),
              CURVE25519_PUBKEY_LEN, TO_CIRCUIT(circ)->n_circ_id,
@@ -736,8 +736,14 @@ get_introduce2_keys_and_verify_mac(hs_cell_introduce2_data_t *data,
                                            data->subcredentials,
                                            encrypted_section,
                                            &data->client_pk);
+
+  printf("intro_keys->enc_key[0]=%u\n", intro_keys->enc_key[0]);
+  printf("intro_keys->enc_key[31]=%u\n", intro_keys->enc_key[31]);
+  printf("intro_keys->mac_key[0]=%u\n", intro_keys->mac_key[0]);
+  printf("intro_keys->mac_key[31]=%u\n", intro_keys->mac_key[31]);
+
   if (intro_keys == NULL) {
-    log_info(LD_REND, "Invalid INTRODUCE2 encrypted data. Unable to "
+    log_notice(LD_REND, "Invalid INTRODUCE2 encrypted data. Unable to "
              "compute key material");
     return NULL;
   }
@@ -766,6 +772,11 @@ get_introduce2_keys_and_verify_mac(hs_cell_introduce2_data_t *data,
     /* Time-invariant conditional copy: if the MAC is what we expected, then
      * set intro_keys_result to intro_keys[i]. Otherwise, don't: but don't
      * leak which one it was! */
+
+    printf("mac[0]=%u\n", mac[0]);
+    printf("other_mac[0]=%u\n", (encrypted_section + mac_offset)[0]);
+    printf("mac[31]=%u\n", mac[31]);
+    printf("other_mac[31]=%u\n", (encrypted_section + mac_offset)[31]);
     bool equal = tor_memeq(mac, encrypted_section + mac_offset, sizeof(mac));
     memcpy_if_true_timei(equal, intro_keys_result, &intro_keys[i],
                          sizeof(*intro_keys_result));
@@ -777,7 +788,7 @@ get_introduce2_keys_and_verify_mac(hs_cell_introduce2_data_t *data,
   tor_free(intro_keys);
 
   if (safe_mem_is_zero(intro_keys_result, sizeof(*intro_keys_result))) {
-    log_info(LD_REND, "Invalid MAC validation for INTRODUCE2 cell");
+    log_notice(LD_REND, "Invalid MAC validation for INTRODUCE2 cell");
     tor_free(intro_keys_result); /* sets intro_keys_result to NULL */
   }
 
@@ -837,7 +848,7 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
     goto done;
   }
 
-  log_info(LD_REND, "Received a decodable INTRODUCE2 cell on circuit %u "
+  log_notice(LD_REND, "Received a decodable INTRODUCE2 cell on circuit %u "
                     "for service %s. Decoding encrypted section...",
            TO_CIRCUIT(circ)->n_circ_id,
            safe_str_client(service->onion_address));
@@ -848,7 +859,7 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
   /* Encrypted section must at least contain the CLIENT_PK and MAC which is
    * defined in section 3.3.2 of the specification. */
   if (encrypted_section_len < (CURVE25519_PUBKEY_LEN + DIGEST256_LEN)) {
-    log_info(LD_REND, "Invalid INTRODUCE2 encrypted section length "
+    log_notice(LD_REND, "Invalid INTRODUCE2 encrypted section length "
                       "for service %s. Dropping cell.",
              safe_str_client(service->onion_address));
     goto done;
@@ -880,6 +891,7 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
     goto done;
   }
 
+
   {
     /* The ENCRYPTED_DATA section starts just after the CLIENT_PK. */
     const uint8_t *encrypted_data =
@@ -891,15 +903,20 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
       encrypted_section_len - (sizeof(data->client_pk) + DIGEST256_LEN);
 
     /* This decrypts the ENCRYPTED_DATA section of the cell. */
+    printf("encrypted_data_len: %u\n", encrypted_data_len);
     decrypted = decrypt_introduce2(intro_keys->enc_key,
                                    encrypted_data, encrypted_data_len);
     if (decrypted == NULL) {
-      log_info(LD_REND, "Unable to decrypt the ENCRYPTED section of an "
+      printf("decrypt failed");
+      log_notice(LD_REND, "Unable to decrypt the ENCRYPTED section of an "
                         "INTRODUCE2 cell on circuit %u for service %s",
                TO_CIRCUIT(circ)->n_circ_id,
                safe_str_client(service->onion_address));
       goto done;
     }
+
+    printf("decrypted[0]: %u\n", decrypted[0]);
+    printf("decrypted[19]: %u\n", decrypted[19]);
 
     /* Parse this blob into an encrypted cell structure so we can then extract
      * the data we need out of it. */
@@ -907,6 +924,7 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
                                           circ, service);
     memwipe(decrypted, 0, encrypted_data_len);
     if (enc_cell == NULL) {
+      printf("failed to parse encrypted cell\n");
       goto done;
     }
   }
@@ -960,7 +978,7 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
 
   /* Success. */
   ret = 0;
-  log_info(LD_REND, "Valid INTRODUCE2 cell. Launching rendezvous circuit.");
+  log_notice(LD_REND, "Valid INTRODUCE2 cell. Launching rendezvous circuit.");
 
  done:
   if (intro_keys) {

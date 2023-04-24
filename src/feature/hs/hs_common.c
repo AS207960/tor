@@ -1051,6 +1051,8 @@ hs_build_hs_index(uint64_t replica, const ed25519_public_key_t *blinded_pk,
   /* Now setup INT_8(replicanum) | INT_8(period_length) | INT_8(period_num) */
   {
     uint64_t period_length = get_time_period_length();
+    printf("period_num: %u\n", period_num);
+    printf("period_length: %u\n", period_length);
     char buf[sizeof(uint64_t)*3];
     size_t offset = 0;
     set_uint64(buf, tor_htonll(replica));

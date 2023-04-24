@@ -35,8 +35,8 @@ relay_set_digest(crypto_digest_t *digest, cell_t *cell)
 
   crypto_digest_add_bytes(digest, (char*)cell->payload, CELL_PAYLOAD_SIZE);
   crypto_digest_get_digest(digest, integrity, 4);
-//  log_fn(LOG_DEBUG,"Putting digest of %u %u %u %u into relay cell.",
-//    integrity[0], integrity[1], integrity[2], integrity[3]);
+  log_notice(LD_OR, "Putting digest of %u %u %u %u into relay cell.",
+    integrity[0], integrity[1], integrity[2], integrity[3]);
   relay_header_unpack(&rh, cell->payload);
   memcpy(rh.integrity, integrity, 4);
   relay_header_pack(cell->payload, &rh);
@@ -58,13 +58,21 @@ relay_digest_matches(crypto_digest_t *digest, cell_t *cell)
   crypto_digest_checkpoint(&backup_digest, digest);
 
   relay_header_unpack(&rh, cell->payload);
+  /*log_notice(LD_OR, "Reading digest of %u %u %u %u from relay cell "
+    "(command=%u, recognized=%u, stream_id=%u).",
+      (unsigned char)rh.integrity[0], (unsigned char)rh.integrity[1],
+      (unsigned char)rh.integrity[2], (unsigned char)rh.integrity[3],
+      rh.command, rh.recognized, rh.stream_id);*/
+
   memcpy(&received_integrity, rh.integrity, 4);
   memset(rh.integrity, 0, 4);
   relay_header_pack(cell->payload, &rh);
 
-//  log_fn(LOG_DEBUG,"Reading digest of %u %u %u %u from relay cell.",
-//    received_integrity[0], received_integrity[1],
-//    received_integrity[2], received_integrity[3]);
+
+  crypto_digest_get_digest(digest, (char*) &calculated_integrity, 4);
+  log_notice(LD_OR, "Current integrity %u %u %u %u",
+    ((unsigned char*)&calculated_integrity)[0], ((unsigned char*)&calculated_integrity)[1],
+    ((unsigned char*)&calculated_integrity)[2], ((unsigned char*)&calculated_integrity)[3]);
 
   crypto_digest_add_bytes(digest, (char*) cell->payload, CELL_PAYLOAD_SIZE);
   crypto_digest_get_digest(digest, (char*) &calculated_integrity, 4);
@@ -72,8 +80,8 @@ relay_digest_matches(crypto_digest_t *digest, cell_t *cell)
   int rv = 1;
 
   if (calculated_integrity != received_integrity) {
-//    log_fn(LOG_INFO,"Recognized=0 but bad digest. Not recognizing.");
-// (%d vs %d).", received_integrity, calculated_integrity);
+    log_notice(LD_OR, "Recognized=0 but bad digest. Not recognizing."
+      "(%u vs %u).", received_integrity, calculated_integrity);
     /* restore digest to its old form */
     crypto_digest_restore(digest, &backup_digest);
     /* restore the relay header */
@@ -171,6 +179,8 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
         cpath_crypt_cell(thishop, cell->payload, true);
 
         relay_header_unpack(&rh, cell->payload);
+        log_fn(LOG_INFO, "relay_decrypt_cell: stream_id=%d recognized=%d",
+         rh.stream_id, rh.recognized);
         if (rh.recognized == 0) {
           /* it's possibly recognized. have to check digest to be sure. */
           if (relay_digest_matches(cpath_get_incoming_digest(thishop), cell)) {
@@ -194,9 +204,12 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
     /* We're in the middle. Decrypt one layer. */
     relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
 
+    log_notice(LD_OR, "relay_decrypt_cell: circ_id=%u", cell->circ_id);
     relay_crypt_one_payload(crypto->f_crypto, cell->payload);
 
     relay_header_unpack(&rh, cell->payload);
+    log_notice(LD_OR, "relay_decrypt_cell: stream_id=%u recognized=%u",
+     rh.stream_id, rh.recognized);
     if (rh.recognized == 0) {
       /* it's possibly recognized. have to check digest to be sure. */
       if (relay_digest_matches(crypto->f_digest, cell)) {
@@ -329,6 +342,19 @@ relay_crypto_init(relay_crypto_t *crypto,
   tor_assert(cipher_key_len != 0);
   const int cipher_key_bits = (int) cipher_key_len * 8;
 
+  log_notice(LD_OR, "relay_crypto_init: f_digest[0]=%u f_digest[%u]=%u "
+    "b_digest[0]=%u b_digest[%u]=%u "
+    "f_crypto[0]=%u f_crypto[%u]=%u b_crypto[0]=%u",
+    (unsigned char)(key_data[0]),
+    digest_len-1,
+    (unsigned char)(key_data[digest_len-1]),
+    (unsigned char)((key_data+digest_len)[0]),
+    digest_len-1,
+    (unsigned char)((key_data+digest_len)[digest_len-1]),
+    (unsigned char)((key_data+(2*digest_len))[0]),
+    (cipher_key_bits/8)-1,
+    (unsigned char)((key_data+(2*digest_len))[(cipher_key_bits/8)-1]),
+    (unsigned char)((key_data+(2*digest_len)+cipher_key_len)[0]));
   crypto_digest_add_bytes(crypto->f_digest, key_data, digest_len);
   crypto_digest_add_bytes(crypto->b_digest, key_data+digest_len, digest_len);
 
