@@ -262,6 +262,7 @@ set_service_default_config(hs_service_config_t *c,
   c->has_dos_defense_enabled = HS_CONFIG_V3_DOS_DEFENSE_DEFAULT;
   c->intro_dos_rate_per_sec = HS_CONFIG_V3_DOS_DEFENSE_RATE_PER_SEC_DEFAULT;
   c->intro_dos_burst_per_sec = HS_CONFIG_V3_DOS_DEFENSE_BURST_PER_SEC_DEFAULT;
+  c->caa = smartlist_new();
 }
 
 /** From a service configuration object config, clear everything from it
@@ -287,6 +288,11 @@ service_clear_config(hs_service_config_t *config)
     SMARTLIST_FOREACH(config->ob_master_pubkeys, ed25519_public_key_t *, k,
                       tor_free(k));
     smartlist_free(config->ob_master_pubkeys);
+  }
+  if (config->caa) {
+    SMARTLIST_FOREACH(config->caa, hs_caa_config_t *, p,
+                      hs_caa_config_free(p););
+    smartlist_free(config->ports);
   }
   memset(config, 0, sizeof(*config));
 }
@@ -1779,6 +1785,11 @@ build_service_desc_encrypted(const hs_service_t *service,
 
   /* XXX: Support client authorization (#20700). */
   encrypted->intro_auth_types = NULL;
+
+  if (encrypted->caa == NULL) {
+    encrypted->caa = smartlist_new();
+    smartlist_add_all(encrypted->caa, service->config.caa);
+  }
   return 0;
 }
 
@@ -1862,6 +1873,12 @@ build_service_desc_superencrypted(const hs_service_t *service,
   /* Shuffle the list to prevent the client know the position in the
    * config. */
   smartlist_shuffle(superencrypted->clients);
+
+  if (smartlist_len(config->caa) != 0) {
+    superencrypted->caa_critical = 1;
+  } else {
+    superencrypted->caa_critical = 0;
+  }
 
   return 0;
 }

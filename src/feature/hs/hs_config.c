@@ -247,6 +247,27 @@ config_has_invalid_options(const config_line_t *line_,
   tor_assert(service);
   tor_assert(service->config.version <= HS_VERSION_MAX);
 
+  /* List of options that a v0 service doesn't support thus must exclude from
+   * its configuration. */
+  const char *opts_exclude_v0[] = {
+    "HiddenServiceCAA",
+    NULL /* End marker. */
+  };
+
+  /* List of options that a v1 service doesn't support thus must exclude from
+   * its configuration. */
+  const char *opts_exclude_v1[] = {
+    "HiddenServiceCAA",
+    NULL /* End marker. */
+  };
+
+  /* List of options that a v2 service doesn't support thus must exclude from
+   * its configuration. */
+  const char *opts_exclude_v2[] = {
+    "HiddenServiceCAA",
+    NULL /* End marker. */
+  };
+
   /* List of options that a v3 service doesn't support thus must exclude from
    * its configuration. */
   const char *opts_exclude_v3[] = {
@@ -260,9 +281,9 @@ config_has_invalid_options(const config_line_t *line_,
   struct {
     const char **list;
   } exclude_lists[HS_VERSION_MAX + 1] = {
-    { NULL }, /* v0. */
-    { NULL }, /* v1. */
-    { NULL }, /* v2. */
+    { opts_exclude_v0 }, /* v0. */
+    { opts_exclude_v1 }, /* v1. */
+    { opts_exclude_v2 }, /* v2. */
     { opts_exclude_v3 }, /* v3. */
   };
 
@@ -389,6 +410,27 @@ config_service_v3(const hs_opts_t *hs_opts,
     /* Option is enabled, parse config file. */
     if (! hs_ob_parse_config_file(config)) {
       goto err;
+    }
+  }
+
+  /* CAA records */
+  if (hs_opts->HiddenServiceCAA) {
+    for (const config_line_t *caa_line = hs_opts->HiddenServiceCAA;
+         caa_line; caa_line = caa_line->next) {
+      char *err_msg = NULL;
+      hs_caa_config_t *caa_cfg =
+        hs_parse_caa_config(caa_line->value, " ", &err_msg);
+      if (!caa_cfg) {
+        if (err_msg) {
+          log_warn(LD_CONFIG, "%s", err_msg);
+        }
+        tor_free(err_msg);
+        goto err;
+      }
+      tor_assert(!err_msg);
+      smartlist_add(config->caa, caa_cfg);
+      log_info(LD_CONFIG, "HiddenServiceCAA=%s for %s",
+               caa_line->value, escaped(config->directory_path));
     }
   }
 

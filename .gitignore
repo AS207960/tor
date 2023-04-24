@@ -4,6 +4,7 @@
 *~
 *.swp
 *.swo
+.idea/
 # C stuff
 *.o
 *.a

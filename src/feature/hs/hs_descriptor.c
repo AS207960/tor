@@ -105,6 +105,8 @@
 #define str_desc_auth_type "desc-auth-type"
 #define str_desc_auth_key "desc-auth-ephemeral-key"
 #define str_desc_auth_client "auth-client"
+#define str_desc_caa_critical "caa-critical"
+#define str_desc_caa "caa"
 #define str_encrypted "encrypted"
 
 /** Authentication supported types. */
@@ -133,7 +135,8 @@ static token_rule_t hs_desc_superencrypted_v3_token_table[] = {
   T1_START(str_desc_auth_type, R3_DESC_AUTH_TYPE, GE(1), NO_OBJ),
   T1(str_desc_auth_key, R3_DESC_AUTH_KEY, GE(1), NO_OBJ),
   T1N(str_desc_auth_client, R3_DESC_AUTH_CLIENT, GE(3), NO_OBJ),
-  T1(str_encrypted, R3_ENCRYPTED, NO_ARGS, NEED_OBJ),
+  T1(str_desc_caa_critical, R3_DESC_CAA_CRITICAL, NO_ARGS, NO_OBJ),
+  T01(str_encrypted, R3_ENCRYPTED, NO_ARGS, NEED_OBJ),
   END_OF_TABLE
 };
 
@@ -143,6 +146,7 @@ static token_rule_t hs_desc_encrypted_v3_token_table[] = {
   T01(str_intro_auth_required, R3_INTRO_AUTH_REQUIRED, GE(1), NO_OBJ),
   T01(str_single_onion, R3_SINGLE_ONION_SERVICE, ARGS, NO_OBJ),
   T01(str_flow_control, R3_FLOW_CONTROL, GE(2), NO_OBJ),
+  T0N(str_desc_caa, R3_CAA, GE(3), NO_OBJ),
   END_OF_TABLE
 };
 
@@ -777,6 +781,14 @@ get_inner_encrypted_layer_plaintext(const hs_descriptor_t *desc)
                              protover_get_supported(PRT_FLOWCTRL),
                              congestion_control_sendme_inc());
     }
+
+    if (desc->encrypted_data.caa && smartlist_len(desc->encrypted_data.caa)) {
+      SMARTLIST_FOREACH_BEGIN(desc->encrypted_data.caa,
+                              const hs_caa_config_t *, caa) {
+      smartlist_add_asprintf(lines, "%s %d %s %s\n", str_desc_caa,
+       caa->flag, caa->tag, caa->value);
+      } SMARTLIST_FOREACH_END(caa);
+    }
   }
 
   /* Build the introduction point(s) section. */
@@ -836,6 +848,10 @@ get_outer_encrypted_layer_plaintext(const hs_descriptor_t *desc,
     char *auth_client_lines = get_all_auth_client_lines(desc);
     tor_assert(auth_client_lines);
     smartlist_add(lines, auth_client_lines);
+  }
+
+  if (desc->superencrypted_data.caa_critical) {
+    smartlist_add_asprintf(lines, "%s\n", str_desc_caa_critical);
   }
 
   /* create encrypted section */
@@ -2773,6 +2789,11 @@ hs_desc_encrypted_data_free_contents(hs_desc_encrypted_data_t *desc)
     SMARTLIST_FOREACH(desc->intro_points, hs_desc_intro_point_t *, ip,
                       hs_desc_intro_point_free(ip));
     smartlist_free(desc->intro_points);
+  }
+  if (desc->caa) {
+    SMARTLIST_FOREACH(desc->caa, hs_caa_config_t *, caa,
+                      hs_caa_config_free(caa));
+    smartlist_free(desc->caa);
   }
   tor_free(desc->flow_control_pv);
   memwipe(desc, 0, sizeof(*desc));

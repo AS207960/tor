@@ -160,6 +160,12 @@ typedef struct hs_port_config_t {
   char unix_addr[FLEXIBLE_ARRAY_MEMBER];
 } hs_port_config_t;
 
+typedef struct hs_caa_config_t {
+  uint8_t flag;
+  char *tag;
+  char *value;
+} hs_caa_config_t;
+
 void hs_init(void);
 void hs_free_all(void);
 
@@ -244,6 +250,12 @@ hs_port_config_t *hs_parse_port_config(const char *string, const char *sep,
 void hs_port_config_free_(hs_port_config_t *p);
 #define hs_port_config_free(p) \
   FREE_AND_NULL(hs_port_config_t, hs_port_config_free_, (p))
+
+hs_caa_config_t *hs_parse_caa_config(const char *string, const char *sep,
+                                       char **err_msg_out);
+void hs_caa_config_free_(hs_caa_config_t *p);
+#define hs_caa_config_free(p) \
+  FREE_AND_NULL(hs_caa_config_t, hs_caa_config_free_, (p))
 
 void hs_inc_rdv_stream_counter(origin_circuit_t *circ);
 void hs_dec_rdv_stream_counter(origin_circuit_t *circ);

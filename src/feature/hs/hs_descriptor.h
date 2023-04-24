@@ -173,6 +173,9 @@ typedef struct hs_desc_encrypted_data_t {
 
   /** A list of intro points. Contains hs_desc_intro_point_t objects. */
   smartlist_t *intro_points;
+
+  /** A list of CAA lines */
+  smartlist_t *caa;
 } hs_desc_encrypted_data_t;
 
 /** The superencrypted data section of a descriptor. Obviously the data in
@@ -191,6 +194,8 @@ typedef struct hs_desc_superencrypted_data_t {
 
   /** Decoding only: Size of the encrypted_blob */
   size_t encrypted_blob_size;
+
+  bool caa_critical;
 } hs_desc_superencrypted_data_t;
 
 /** Plaintext data that is unencrypted information of the descriptor. */

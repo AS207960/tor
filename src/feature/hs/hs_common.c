@@ -789,6 +789,66 @@ hs_port_config_free_(hs_port_config_t *p)
   tor_free(p);
 }
 
+/** Parses a CAA line and returns a new hs_caa_config_t,
+ * or NULL and an optional error string on failure.
+ *
+ * The format is: flags SP tag SP value
+ */
+hs_caa_config_t *
+hs_parse_caa_config(const char *string, const char *sep,
+                               char **err_msg_out)
+{
+  smartlist_t *sl;
+  hs_caa_config_t *result;
+  uint8_t flag;
+  char *tag = NULL;
+  char *value = NULL;
+  char *err_msg = NULL;
+
+  sl = smartlist_new();
+  smartlist_split_string(sl, string, " ",
+                         SPLIT_SKIP_SPACE|SPLIT_IGNORE_BLANK|SPLIT_STRIP_SPACE, 3);
+  if (smartlist_len(sl) < 3 || BUG(smartlist_len(sl) > 3)) {
+    err_msg = tor_strdup("Bad syntax in hidden service CAA line.");
+    goto err;
+  }
+  int ok;
+  tag = (uint8_t)tor_parse_ulong(smartlist_get(sl,0), 10, 0, 255,&ok,NULL);
+  if (!ok) {
+    tor_asprintf(&err_msg, "Missing or invalid tag %s in hidden service "
+                   "CAA line.", escaped(smartlist_get(sl,0)));
+
+    goto err;
+  }
+
+  const char *l_tag = smartlist_get(sl,1);
+  const char *l_value = smartlist_get(sl,2);
+
+  result = tor_malloc_zero(sizeof(hs_caa_config_t));
+  result->tag = tor_strdup(l_tag);
+  result->value = tor_strdup(l_value);
+
+ err:
+  if (err_msg_out != NULL) {
+    *err_msg_out = err_msg;
+  } else {
+    tor_free(err_msg);
+  }
+  SMARTLIST_FOREACH(sl, char *, c, tor_free(c));
+  smartlist_free(sl);
+
+  return result;
+}
+
+/** Release all storage held in a hs_caa_config_t. */
+void
+hs_caa_config_free_(hs_caa_config_t *p)
+{
+  tor_free(p->tag);
+  tor_free(p->value);
+  tor_free(p);
+}
+
 /** Using a base32 representation of a service address, parse its content into
  * the key_out, checksum_out and version_out. Any out variable can be NULL in
  * case the caller would want only one field. checksum_out MUST at least be 2
