@@ -419,7 +419,7 @@ config_service_v3(const hs_opts_t *hs_opts,
          caa_line; caa_line = caa_line->next) {
       char *err_msg = NULL;
       hs_caa_config_t *caa_cfg =
-        hs_parse_caa_config(caa_line->value, " ", &err_msg);
+        hs_parse_caa_config(caa_line->value, &err_msg);
       if (!caa_cfg) {
         if (err_msg) {
           log_warn(LD_CONFIG, "%s", err_msg);

@@ -251,8 +251,7 @@ void hs_port_config_free_(hs_port_config_t *p);
 #define hs_port_config_free(p) \
   FREE_AND_NULL(hs_port_config_t, hs_port_config_free_, (p))
 
-hs_caa_config_t *hs_parse_caa_config(const char *string, const char *sep,
-                                       char **err_msg_out);
+hs_caa_config_t *hs_parse_caa_config(const char *string, char **err_msg_out);
 void hs_caa_config_free_(hs_caa_config_t *p);
 #define hs_caa_config_free(p) \
   FREE_AND_NULL(hs_caa_config_t, hs_caa_config_free_, (p))
