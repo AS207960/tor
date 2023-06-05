@@ -147,7 +147,7 @@ static token_rule_t hs_desc_superencrypted_v3_token_table[] = {
   T1_START(str_desc_auth_type, R3_DESC_AUTH_TYPE, GE(1), NO_OBJ),
   T1(str_desc_auth_key, R3_DESC_AUTH_KEY, GE(1), NO_OBJ),
   T1N(str_desc_auth_client, R3_DESC_AUTH_CLIENT, GE(3), NO_OBJ),
-  T1(str_desc_caa_critical, R3_DESC_CAA_CRITICAL, NO_ARGS, NO_OBJ),
+  T01(str_desc_caa_critical, R3_DESC_CAA_CRITICAL, NO_ARGS, NO_OBJ),
   T01(str_encrypted, R3_ENCRYPTED, NO_ARGS, NEED_OBJ),
   END_OF_TABLE
 };
