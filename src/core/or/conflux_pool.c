@@ -35,6 +35,8 @@
 #include "core/or/conflux_st.h"
 
 #include "feature/nodelist/nodelist.h"
+#include "feature/client/bridges.h"
+#include "app/config/config.h"
 
 #include "lib/crypt_ops/crypto_rand.h"
 #include "lib/crypt_ops/crypto_util.h"
@@ -129,6 +131,11 @@ get_linked_pool(bool is_client)
 }
 #endif
 
+/* For unit tests only: please treat these exactly as the defines in the
+ * code. */
+STATIC uint8_t DEFAULT_CLIENT_UX = CONFLUX_UX_HIGH_THROUGHPUT;
+STATIC uint8_t DEFAULT_EXIT_UX = CONFLUX_UX_MIN_LATENCY;
+
 /** Helper: Format at 8 bytes the nonce for logging. */
 static inline const char *
 fmt_nonce(const uint8_t *nonce)
@@ -142,18 +149,19 @@ fmt_nonce(const uint8_t *nonce)
 static uint8_t
 conflux_choose_algorithm(uint8_t desired_ux)
 {
-  /* TODO-329-TUNING: Pick better algs here*/
   switch (desired_ux) {
     case CONFLUX_UX_NO_OPINION:
       return CONFLUX_ALG_LOWRTT;
     case CONFLUX_UX_MIN_LATENCY:
       return CONFLUX_ALG_MINRTT;
-    case CONFLUX_UX_LOW_MEM_LATENCY:
-      return CONFLUX_ALG_MINRTT;
-    case CONFLUX_UX_LOW_MEM_THROUGHPUT:
-      return CONFLUX_ALG_CWNDRTT;
     case CONFLUX_UX_HIGH_THROUGHPUT:
       return CONFLUX_ALG_LOWRTT;
+    /* For now, we have no low mem algs, so use minRTT since it should
+     * switch less and thus use less mem */
+    /* TODO-329-TUNING: Pick better algs here*/
+    case CONFLUX_UX_LOW_MEM_THROUGHPUT:
+    case CONFLUX_UX_LOW_MEM_LATENCY:
+      return CONFLUX_ALG_MINRTT;
     default:
       /* Trunnel should protect us from this */
       tor_assert_nonfatal_unreached();
@@ -1015,6 +1023,24 @@ get_exit_for_nonce(const uint8_t *nonce)
   return exit;
 }
 
+/**
+ * Return the currently configured client UX.
+ */
+static uint8_t
+get_client_ux(void)
+{
+#ifdef TOR_UNIT_TESTS
+  return DEFAULT_CLIENT_UX;
+#else
+  const or_options_t *opt = get_options();
+  tor_assert(opt);
+  (void)DEFAULT_CLIENT_UX;
+
+  /* Return the UX */
+  return opt->ConfluxClientUX;
+#endif
+}
+
 /** Return true iff the given conflux object is allowed to launch a new leg. If
  * the cfx object is NULL, then it is always allowed to launch a new leg. */
 static bool
@@ -1108,7 +1134,7 @@ conflux_launch_leg(const uint8_t *nonce)
   leg_t *leg = leg_new(TO_CIRCUIT(circ),
                        conflux_cell_new_link(nonce,
                                              last_seq_sent, last_seq_recv,
-                                             true));
+                                             get_client_ux()));
 
   /* Increase the retry count for this conflux object as in this nonce. */
   unlinked->cfx->num_leg_launch++;
@@ -1147,6 +1173,14 @@ conflux_add_guards_to_exclude_list(const origin_circuit_t *orig_circ,
 
   /* Getting here without a nonce is a code flow issue. */
   if (BUG(!circ->conflux_pending_nonce)) {
+    return;
+  }
+
+  /* If there is only one bridge, then only issue a warn once that
+   * at least two bridges are best for conflux. Exempt Snowflake
+   * from this warn */
+  if (get_options()->UseBridges && !conflux_can_exclude_used_bridges()) {
+    /* Do not build any exclude lists; not enough bridges */
     return;
   }
 
@@ -1751,8 +1785,10 @@ conflux_process_link(circuit_t *circ, const cell_t *cell,
     goto end;
   }
 
+  /* Exits should always request min latency from clients */
   conflux_cell_link_t *linked = conflux_cell_new_link(nonce, last_seq_sent,
-                                                      last_seq_recv, false);
+                                                      last_seq_recv,
+                                                      DEFAULT_EXIT_UX);
 
   conflux_cell_send_linked(linked, TO_OR_CIRCUIT(circ));
   tor_free(linked);

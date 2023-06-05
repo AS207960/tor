@@ -77,6 +77,7 @@
 #include "core/or/circuitmux_ewma.h"
 #include "core/or/circuitstats.h"
 #include "core/or/connection_edge.h"
+#include "trunnel/conflux.h"
 #include "core/or/dos.h"
 #include "core/or/policies.h"
 #include "core/or/relay.h"
@@ -88,9 +89,11 @@
 #include "feature/control/control.h"
 #include "feature/control/control_auth.h"
 #include "feature/control/control_events.h"
+#include "feature/dircache/dirserv.h"
 #include "feature/dirclient/dirclient_modes.h"
 #include "feature/hibernate/hibernate.h"
 #include "feature/hs/hs_config.h"
+#include "feature/hs/hs_pow.h"
 #include "feature/metrics/metrics.h"
 #include "feature/nodelist/dirlist.h"
 #include "feature/nodelist/networkstatus.h"
@@ -375,9 +378,12 @@ static const config_var_t option_vars_[] = {
   OBSOLETE("ClientAutoIPv6ORPort"),
   V(ClientRejectInternalAddresses, BOOL,   "1"),
   V(ClientTransportPlugin,       LINELIST, NULL),
-  V(ClientUseIPv6,               BOOL,     "0"),
+  V(ClientUseIPv6,               BOOL,     "1"),
   V(ClientUseIPv4,               BOOL,     "1"),
+  V(CompiledProofOfWorkHash,     AUTOBOOL, "auto"),
   V(ConfluxEnabled,              AUTOBOOL, "auto"),
+  VAR("ConfluxClientUX",         STRING,   ConfluxClientUX_option,
+          "throughput"),
   V(ConnLimit,                   POSINT,     "1000"),
   V(ConnDirectionStatistics,     BOOL,     "0"),
   V(ConstrainedSockets,          BOOL,     "0"),
@@ -509,6 +515,9 @@ static const config_var_t option_vars_[] = {
   VAR("HiddenServiceOnionBalanceInstance",
       LINELIST_S, RendConfigLines, NULL),
   VAR("HiddenServiceCAA", LINELIST_S, RendConfigLines, NULL),
+  VAR("HiddenServicePoWDefensesEnabled", LINELIST_S, RendConfigLines, NULL),
+  VAR("HiddenServicePoWQueueRate", LINELIST_S, RendConfigLines, NULL),
+  VAR("HiddenServicePoWQueueBurst", LINELIST_S, RendConfigLines, NULL),
   VAR("HiddenServiceStatistics", BOOL, HiddenServiceStatistics_option, "1"),
   V(ClientOnionAuthDir,          FILENAME, NULL),
   OBSOLETE("CloseHSClientCircuitsImmediatelyOnTimeout"),
@@ -2729,11 +2738,19 @@ list_deprecated_options(void)
 static void
 list_enabled_modules(void)
 {
-  printf("%s: %s\n", "relay", have_module_relay() ? "yes" : "no");
-  printf("%s: %s\n", "dirauth", have_module_dirauth() ? "yes" : "no");
-  // We don't list dircache, because it cannot be enabled or disabled
-  // independently from relay.  Listing it here would proliferate
-  // test variants in test_parseconf.sh to no useful purpose.
+  static const struct {
+    const char *name;
+    bool have;
+  } list[] = {
+    { "relay", have_module_relay() },
+    { "dirauth", have_module_dirauth() },
+    { "dircache", have_module_dircache() },
+    { "pow", have_module_pow() }
+  };
+
+  for (unsigned i = 0; i < sizeof list / sizeof list[0]; i++) {
+    printf("%s: %s\n", list[i].name, list[i].have ? "yes" : "no");
+  }
 }
 
 /** Prints compile-time and runtime library versions. */
@@ -3531,6 +3548,21 @@ options_validate_cb(const void *old_options_, void *options_, char **msg)
                      "Unrecognized value '%s' in SafeLogging",
                      escaped(options->SafeLogging));
     return -1;
+  }
+
+ options->ConfluxClientUX = CONFLUX_UX_HIGH_THROUGHPUT;
+ if (options->ConfluxClientUX_option) {
+    if (!strcmp(options->ConfluxClientUX_option, "latency"))
+      options->ConfluxClientUX = CONFLUX_UX_MIN_LATENCY;
+    else if (!strcmp(options->ConfluxClientUX_option, "throughput"))
+      options->ConfluxClientUX = CONFLUX_UX_HIGH_THROUGHPUT;
+    else if (!strcmp(options->ConfluxClientUX_option, "latency_lowmem"))
+      options->ConfluxClientUX = CONFLUX_UX_LOW_MEM_LATENCY;
+    else if (!strcmp(options->ConfluxClientUX_option, "throughput_lowmem"))
+      options->ConfluxClientUX = CONFLUX_UX_LOW_MEM_THROUGHPUT;
+    else
+      REJECT("ConfluxClientUX must be 'latency', 'throughput, "
+             "'latency_lowmem', or 'throughput_lowmem'");
   }
 
   if (options_validate_publish_server(old_options, options, msg) < 0)
@@ -4474,6 +4506,10 @@ options_init_from_torrc(int argc, char **argv)
 
   if (config_line_find(cmdline_only_options, "--version")) {
     printf("Tor version %s.\n",get_version());
+#ifdef ENABLE_GPL
+    printf("This build of Tor is covered by the GNU General Public License "
+            "(https://www.gnu.org/licenses/gpl-3.0.en.html)\n");
+#endif
     printf("Tor is running on %s with Libevent %s, "
             "%s %s, Zlib %s, Liblzma %s, Libzstd %s and %s %s as libc.\n",
             get_uname(),

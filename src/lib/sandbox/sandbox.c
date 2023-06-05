@@ -222,6 +222,10 @@ static int filter_nopar_gen[] = {
 #endif
     // glob uses this..
     SCMP_SYS(lstat),
+#ifdef __NR_membarrier
+    /* Inter-processor synchronization, needed for tracing support */
+    SCMP_SYS(membarrier),
+#endif
     SCMP_SYS(mkdir),
     SCMP_SYS(mlockall),
 #ifdef __NR_mmap
@@ -437,7 +441,14 @@ sb_mmap2(scmp_filter_ctx ctx, sandbox_cfg_t *filter)
 
   rc = seccomp_rule_add_2(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap2),
        SCMP_CMP(2, SCMP_CMP_EQ, PROT_READ|PROT_WRITE),
-       SCMP_CMP(3, SCMP_CMP_EQ,MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK));
+       SCMP_CMP(3, SCMP_CMP_EQ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK));
+  if (rc) {
+    return rc;
+  }
+
+  rc = seccomp_rule_add_2(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap2),
+       SCMP_CMP(2, SCMP_CMP_EQ, PROT_NONE),
+       SCMP_CMP(3, SCMP_CMP_EQ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK));
   if (rc) {
     return rc;
   }
@@ -1244,7 +1255,8 @@ sb_rt_sigprocmask(scmp_filter_ctx ctx, sandbox_cfg_t *filter)
   int rc = 0;
   (void) filter;
 
-#ifdef ENABLE_FRAGILE_HARDENING
+#if defined(ENABLE_FRAGILE_HARDENING) || \
+    defined(USE_TRACING_INSTRUMENTATION_LTTNG)
   rc = seccomp_rule_add_1(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask),
       SCMP_CMP(0, SCMP_CMP_EQ, SIG_BLOCK));
   if (rc)

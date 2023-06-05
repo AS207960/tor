@@ -32,8 +32,10 @@
 #include "feature/nodelist/nodelist.h"
 #include "feature/nodelist/node_st.h"
 #include "feature/nodelist/routerstatus_st.h"
+#include "feature/nodelist/torcert.h"
 #include "feature/relay/relay_metrics.h"
 #include "feature/relay/router.h"
+#include "feature/relay/routerkeys.h"
 #include "feature/stats/rephist.h"
 
 #include <event2/dns.h>
@@ -55,6 +57,12 @@ static void fill_streams_values(void);
 static void fill_relay_flags(void);
 static void fill_tcp_exhaustion_values(void);
 static void fill_traffic_values(void);
+static void fill_signing_cert_expiry(void);
+
+static void fill_est_intro_cells(void);
+static void fill_est_rend_cells(void);
+static void fill_intro1_cells(void);
+static void fill_rend1_cells(void);
 
 /** The base metrics that is a static array of metrics added to the metrics
  * store.
@@ -173,6 +181,41 @@ static const relay_metrics_entry_t base_metrics[] =
     .name = METRICS_NAME(relay_circuits_total),
     .help = "Total number of circuits",
     .fill_fn = fill_circuits_values,
+  },
+  {
+    .key = RELAY_METRICS_SIGNING_CERT_EXPIRY,
+    .type = METRICS_TYPE_GAUGE,
+    .name = METRICS_NAME(relay_signing_cert_expiry_timestamp),
+    .help = "Timestamp at which the current online keys will expire",
+    .fill_fn = fill_signing_cert_expiry,
+  },
+  {
+    .key = RELAY_METRICS_NUM_EST_REND,
+    .type = METRICS_TYPE_COUNTER,
+    .name = METRICS_NAME(relay_est_rend_total),
+    .help = "Total number of EST_REND cells we received",
+    .fill_fn = fill_est_rend_cells,
+  },
+  {
+    .key = RELAY_METRICS_NUM_EST_INTRO,
+    .type = METRICS_TYPE_COUNTER,
+    .name = METRICS_NAME(relay_est_intro_total),
+    .help = "Total number of EST_INTRO cells we received",
+    .fill_fn = fill_est_intro_cells,
+  },
+  {
+    .key = RELAY_METRICS_NUM_INTRO1_CELLS,
+    .type = METRICS_TYPE_COUNTER,
+    .name = METRICS_NAME(relay_intro1_total),
+    .help = "Total number of INTRO1 cells we received",
+    .fill_fn = fill_intro1_cells,
+  },
+  {
+    .key = RELAY_METRICS_NUM_REND1_CELLS,
+    .type = METRICS_TYPE_COUNTER,
+    .name = METRICS_NAME(relay_rend1_total),
+    .help = "Total number of REND1 cells we received",
+    .fill_fn = fill_rend1_cells,
   },
 };
 static const size_t num_base_metrics = ARRAY_LENGTH(base_metrics);
@@ -989,6 +1032,172 @@ fill_oom_values(void)
   metrics_store_entry_add_label(sentry,
                                 metrics_format_label("subsys", "hsdir"));
   metrics_store_entry_update(sentry, oom_stats_n_bytes_removed_hsdir);
+}
+
+/** Fill function for the RELAY_METRICS_SIGNING_CERT_EXPIRY metrics. */
+static void
+fill_signing_cert_expiry(void)
+{
+  metrics_store_entry_t *sentry;
+  const tor_cert_t *signing_key;
+  const relay_metrics_entry_t *rentry =
+    &base_metrics[RELAY_METRICS_SIGNING_CERT_EXPIRY];
+
+  if (get_options()->OfflineMasterKey) {
+    signing_key = get_master_signing_key_cert();
+    if (signing_key) {
+      sentry = metrics_store_add(the_store, rentry->type, rentry->name,
+                                 rentry->help, 0, NULL);
+      metrics_store_entry_update(sentry, signing_key->valid_until);
+    }
+  }
+}
+
+static uint64_t est_intro_actions[EST_INTRO_ACTION_COUNT] = {0};
+
+void
+relay_increment_est_intro_action(est_intro_action_t action)
+{
+  est_intro_actions[action]++;
+}
+
+static void
+fill_est_intro_cells(void)
+{
+  metrics_store_entry_t *sentry;
+  const relay_metrics_entry_t *rentry =
+      &base_metrics[RELAY_METRICS_NUM_EST_INTRO];
+
+  static struct {
+    const char *name;
+    est_intro_action_t key;
+  } actions[] = {
+      {.name = "success", .key = EST_INTRO_SUCCESS},
+      {.name = "malformed", .key = EST_INTRO_MALFORMED},
+      {.name = "unsuitable_circuit", .key = EST_INTRO_UNSUITABLE_CIRCUIT},
+      {.name = "circuit_dead", .key = EST_INTRO_CIRCUIT_DEAD},
+  };
+  static const size_t num_actions = ARRAY_LENGTH(actions);
+
+  for (size_t i = 0; i < num_actions; ++i) {
+    sentry = metrics_store_add(the_store, rentry->type, rentry->name,
+                               rentry->help, 0, NULL);
+    metrics_store_entry_add_label(
+        sentry, metrics_format_label("action", actions[i].name));
+    metrics_store_entry_update(sentry,
+                               (long)est_intro_actions[actions[i].key]);
+  }
+}
+
+static uint64_t est_rend_actions[EST_REND_ACTION_COUNT] = {0};
+
+void
+relay_increment_est_rend_action(est_rend_action_t action)
+{
+  est_rend_actions[action]++;
+}
+
+static void
+fill_est_rend_cells(void)
+{
+  metrics_store_entry_t *sentry;
+  const relay_metrics_entry_t *rentry =
+      &base_metrics[RELAY_METRICS_NUM_EST_REND];
+
+  static struct {
+    const char *name;
+    est_rend_action_t key;
+  } actions[] = {
+      {.name = "success", .key = EST_REND_SUCCESS},
+      {.name = "unsuitable_circuit", .key = EST_REND_UNSUITABLE_CIRCUIT},
+      {.name = "single_hop", .key = EST_REND_SINGLE_HOP},
+      {.name = "malformed", .key = EST_REND_MALFORMED},
+      {.name = "duplicate_cookie", .key = EST_REND_DUPLICATE_COOKIE},
+      {.name = "circuit_dead", .key = EST_REND_CIRCUIT_DEAD},
+  };
+  static const size_t num_actions = ARRAY_LENGTH(actions);
+
+  for (size_t i = 0; i < num_actions; ++i) {
+    sentry = metrics_store_add(the_store, rentry->type, rentry->name,
+                               rentry->help, 0, NULL);
+    metrics_store_entry_add_label(
+        sentry, metrics_format_label("action", actions[i].name));
+    metrics_store_entry_update(sentry, (long)est_rend_actions[actions[i].key]);
+  }
+}
+
+static uint64_t intro1_actions[INTRO1_ACTION_COUNT] = {0};
+
+void
+relay_increment_intro1_action(intro1_action_t action)
+{
+  intro1_actions[action]++;
+}
+
+static void
+fill_intro1_cells(void)
+{
+  metrics_store_entry_t *sentry;
+  const relay_metrics_entry_t *rentry =
+      &base_metrics[RELAY_METRICS_NUM_INTRO1_CELLS];
+
+  static struct {
+    const char *name;
+    intro1_action_t key;
+  } actions[] = {
+      {.name = "success", .key = INTRO1_SUCCESS},
+      {.name = "circuit_dead", .key = INTRO1_CIRCUIT_DEAD},
+      {.name = "malformed", .key = INTRO1_MALFORMED},
+      {.name = "unknown_service", .key = INTRO1_UNKNOWN_SERVICE},
+      {.name = "rate_limited", .key = INTRO1_RATE_LIMITED},
+      {.name = "circuit_reused", .key = INTRO1_CIRCUIT_REUSED},
+      {.name = "single_hop", .key = INTRO1_SINGLE_HOP},
+  };
+  static const size_t num_actions = ARRAY_LENGTH(actions);
+
+  for (size_t i = 0; i < num_actions; ++i) {
+    sentry = metrics_store_add(the_store, rentry->type, rentry->name,
+                               rentry->help, 0, NULL);
+    metrics_store_entry_add_label(
+        sentry, metrics_format_label("action", actions[i].name));
+    metrics_store_entry_update(sentry, (long)intro1_actions[actions[i].key]);
+  }
+}
+
+static uint64_t rend1_actions[REND1_ACTION_COUNT] = {0};
+
+void
+relay_increment_rend1_action(rend1_action_t action)
+{
+  rend1_actions[action]++;
+}
+
+static void
+fill_rend1_cells(void)
+{
+  metrics_store_entry_t *sentry;
+  const relay_metrics_entry_t *rentry =
+      &base_metrics[RELAY_METRICS_NUM_REND1_CELLS];
+
+  static struct {
+    const char *name;
+    rend1_action_t key;
+  } actions[] = {
+      {.name = "success", .key = REND1_SUCCESS},
+      {.name = "unsuitable_circuit", .key = REND1_UNSUITABLE_CIRCUIT},
+      {.name = "malformed", .key = REND1_MALFORMED},
+      {.name = "unknown_cookie", .key = REND1_UNKNOWN_COOKIE},
+      {.name = "circuit_dead", .key = REND1_CIRCUIT_DEAD},
+  };
+  static const size_t num_actions = ARRAY_LENGTH(actions);
+
+  for (size_t i = 0; i < num_actions; ++i) {
+    sentry = metrics_store_add(the_store, rentry->type, rentry->name,
+                               rentry->help, 0, NULL);
+    metrics_store_entry_add_label(
+        sentry, metrics_format_label("action", actions[i].name));
+    metrics_store_entry_update(sentry, (long)rend1_actions[actions[i].key]);
+  }
 }
 
 /** Reset the global store and fill it with all the metrics from base_metrics

@@ -2552,6 +2552,11 @@ circuit_get_open_circ_or_launch(entry_connection_t *conn,
           circ->hs_ident =
             hs_ident_circuit_new(&edge_conn->hs_ident->identity_pk);
         }
+        if (desired_circuit_purpose == CIRCUIT_PURPOSE_C_INTRODUCE_ACK_WAIT) {
+          if (hs_client_setup_intro_circ_auth_key(circ) < 0) {
+            return 0;
+          }
+        }
         if (circ->base_.purpose == CIRCUIT_PURPOSE_C_ESTABLISH_REND &&
             circ->base_.state == CIRCUIT_STATE_OPEN)
           circuit_has_opened(circ);
@@ -2841,8 +2846,10 @@ connection_ap_handshake_attach_circuit(entry_connection_t *conn)
 
   conn_age = (int)(time(NULL) - base_conn->timestamp_created);
 
-  /* Is this connection so old that we should give up on it? */
-  if (conn_age >= get_options()->SocksTimeout) {
+  /* Is this connection so old that we should give up on it? Don't timeout if
+   * this is a connection to an HS with PoW enabled because it can take an
+   * arbitrary amount of time. */
+  if (conn_age >= get_options()->SocksTimeout && !conn->hs_with_pow_conn) {
     int severity = (tor_addr_is_null(&base_conn->addr) && !base_conn->port) ?
       LOG_INFO : LOG_NOTICE;
     log_fn(severity, LD_APP,
@@ -3002,6 +3009,16 @@ connection_ap_handshake_attach_circuit(entry_connection_t *conn)
       conn, CIRCUIT_PURPOSE_C_INTRODUCE_ACK_WAIT, &introcirc);
     if (retval < 0) return -1; /* failed */
 
+    if (rendcirc && introcirc) {
+      /* Let's fill out the hs_ident fully as soon as possible, so that
+       * unreachability counts can be updated properly even if circuits close
+       * early. */
+      tor_assert_nonfatal(!ed25519_public_key_is_zero(
+                             &introcirc->hs_ident->intro_auth_pk));
+      ed25519_pubkey_copy(&rendcirc->hs_ident->intro_auth_pk,
+                          &introcirc->hs_ident->intro_auth_pk);
+    }
+
     if (retval > 0) {
       /* one has already sent the intro. keep waiting. */
       tor_assert(introcirc);
@@ -3033,8 +3050,8 @@ connection_ap_handshake_attach_circuit(entry_connection_t *conn)
       if (introcirc->base_.state == CIRCUIT_STATE_OPEN) {
         int ret;
         log_info(LD_REND, "Found open intro circ %u (id: %" PRIu32 "). "
-                          "Rend circuit %u (id: %" PRIu32 "); Sending "
-                          "introduction. (stream %d sec old)",
+                          "Rend circuit %u (id: %" PRIu32 "); Considering "
+                          "sending introduction. (stream %d sec old)",
                  (unsigned) TO_CIRCUIT(introcirc)->n_circ_id,
                  introcirc->global_identifier,
                  (unsigned) TO_CIRCUIT(rendcirc)->n_circ_id,
