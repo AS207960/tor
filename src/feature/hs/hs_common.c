@@ -847,6 +847,16 @@ hs_caa_config_free_(hs_caa_config_t *p)
   tor_free(p);
 }
 
+hs_caa_config_t *
+hs_caa_config_dup(hs_caa_config_t *p)
+{
+  hs_caa_config_t *result = tor_malloc_zero(sizeof(hs_caa_config_t));
+  memcpy(result, p, sizeof(hs_caa_config_t));
+  p->tag = tor_strdup(p->tag);
+  p->value = tor_strdup(p->value);
+  return result;
+}
+
 /** Using a base32 representation of a service address, parse its content into
  * the key_out, checksum_out and version_out. Any out variable can be NULL in
  * case the caller would want only one field. checksum_out MUST at least be 2

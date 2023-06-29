@@ -348,7 +348,7 @@ service_clear_config(hs_service_config_t *config)
   if (config->caa) {
     SMARTLIST_FOREACH(config->caa, hs_caa_config_t *, p,
                       hs_caa_config_free(p););
-    smartlist_free(config->ports);
+    smartlist_free(config->caa);
   }
   memset(config, 0, sizeof(*config));
 }
@@ -1844,7 +1844,10 @@ build_service_desc_encrypted(const hs_service_t *service,
 
   if (encrypted->caa == NULL) {
     encrypted->caa = smartlist_new();
-    smartlist_add_all(encrypted->caa, service->config.caa);
+    SMARTLIST_FOREACH(service->config.caa, hs_caa_config_t *, caa, {
+      hs_caa_config_t *caa_copy = hs_caa_config_dup(caa);
+      smartlist_add(encrypted->caa, caa_copy);
+    });
   }
   return 0;
 }
