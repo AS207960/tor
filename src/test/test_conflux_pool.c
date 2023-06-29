@@ -6,6 +6,7 @@
 #define CRYPT_PATH_PRIVATE
 #define RELAY_PRIVATE
 #define CONNECTION_PRIVATE
+#define TOR_CONGESTION_CONTROL_COMMON_PRIVATE
 #define TOR_CONGESTION_CONTROL_PRIVATE
 
 #include "core/or/or.h"
@@ -25,8 +26,8 @@
 #include "core/or/circuitstats.h"
 #include "core/or/circuitbuild.h"
 #include "core/or/circuituse.h"
-#include "core/or/congestion_control_common.h"
 #include "core/or/congestion_control_st.h"
+#include "core/or/congestion_control_common.h"
 #include "core/or/extendinfo.h"
 #include "core/mainloop/netstatus.h"
 #include "core/crypto/relay_crypto.h"
@@ -127,7 +128,6 @@ circuit_establish_circuit_conflux_mock(const uint8_t *conflux_nonce,
   simulate_single_hop_extend(circ, 0);
   simulate_single_hop_extend(circ, 1);
   circ->cpath->prev->ccontrol = tor_malloc_zero(sizeof(congestion_control_t));
-  circ->cpath->prev->ccontrol->sendme_arrival_timestamps = smartlist_new();
   circ->cpath->prev->ccontrol->sendme_pending_timestamps = smartlist_new();
   circ->cpath->prev->ccontrol->sendme_inc = 31;
 
@@ -498,7 +498,6 @@ simulate_circuit_build(circuit_t *client_circ)
   relay_side->purpose = CIRCUIT_PURPOSE_OR;
   relay_side->n_chan = NULL; // No next hop
   relay_side->ccontrol = tor_malloc_zero(sizeof(congestion_control_t));
-  relay_side->ccontrol->sendme_arrival_timestamps = smartlist_new();
   relay_side->ccontrol->sendme_pending_timestamps = smartlist_new();
   relay_side->ccontrol->sendme_inc = 31;
   smartlist_add(exit_circs, relay_side);

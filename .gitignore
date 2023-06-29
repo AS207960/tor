@@ -44,6 +44,8 @@ core.*
 !core/
 # ccls file that can be per directory.
 *.ccls
+# clangd uses that for LSP caching.
+/.cache
 
 # /
 /Makefile
